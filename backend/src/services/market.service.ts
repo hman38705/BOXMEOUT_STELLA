@@ -11,6 +11,7 @@ import {
   leaderboardService,
   LeaderboardService,
 } from './leaderboard.service.js';
+import { achievementService } from './achievement.service.js';
 
 export class MarketService {
   private marketRepository: MarketRepository;
@@ -216,8 +217,11 @@ export class MarketService {
       market.status !== MarketStatus.CLOSED &&
       market.status !== MarketStatus.OPEN
     ) {
-      // Acceptance criteria might allow resolving from OPEN if closing time passed
-      // but typically CLOSED is safer. Let's stick to implementation.
+      throw new Error(`Market cannot be resolved in ${market.status} status`);
+    }
+
+    if (market.status === MarketStatus.OPEN && market.closingAt > new Date()) {
+      throw new Error('Market is still open and has not reached closing time');
     }
 
     if (winningOutcome !== 0 && winningOutcome !== 1) {
@@ -329,6 +333,15 @@ export class MarketService {
           market.category,
           totalUserPnl,
           hasWin
+        );
+
+        // Trigger achievement checks after settlement (non-blocking)
+        achievementService.checkAndAward(userId).catch((err) =>
+          logger.error('Achievement check failed post-settlement', {
+            userId,
+            marketId,
+            error: err,
+          })
         );
       } catch (error) {
         logger.error('Failed to update tier or leaderboard for user', {
