@@ -33,7 +33,8 @@ pub fn initialized(env: &Env, admin: Address) {
 /// - Topics: [symbol!("admin_updated")]
 /// - Data:   (old_admin: Address, new_admin: Address)
 pub fn admin_updated(env: &Env, old_admin: Address, new_admin: Address) {
-    todo!("Emit admin_updated event")
+    let topics = (soroban_sdk::Symbol::new(env, "admin_updated"),);
+    env.events().publish(topics, (old_admin, new_admin));
 }
 
 /// Emitted when the fee configuration is changed.
@@ -47,7 +48,11 @@ pub fn fee_config_updated(
     lp_fee_bps: u32,
     creator_fee_bps: u32,
 ) {
-    todo!("Emit fee_config_updated event")
+    #[allow(deprecated)]
+    env.events().publish(
+        (Symbol::new(env, "fee_cfg_upd"),),
+        (protocol_fee_bps, lp_fee_bps, creator_fee_bps),
+    );
 }
 
 /// Emitted when the treasury address changes.
@@ -56,7 +61,8 @@ pub fn fee_config_updated(
 /// - Topics: [symbol!("treasury_upd")]
 /// - Data:   (new_treasury: Address)
 pub fn treasury_updated(env: &Env, new_treasury: Address) {
-    todo!("Emit treasury_updated event")
+    let topics = (soroban_sdk::Symbol::new(env, "treasury_updated"),);
+    env.events().publish(topics, (new_treasury,));
 }
 
 /// Emitted when the global emergency pause is activated.
@@ -113,8 +119,20 @@ pub fn market_created(
     market_id: u64,
     creator: Address,
     question: soroban_sdk::String,
+    betting_close_time: u64,
+    resolution_deadline: u64,
 ) {
-    todo!("Emit market_created event")
+    #[allow(deprecated)]
+    env.events().publish(
+        (Symbol::new(env, "mkt_created"), market_id),
+        (
+            market_id,
+            creator,
+            question,
+            betting_close_time,
+            resolution_deadline,
+        ),
+    );
 }
 
 /// Emitted when a market's metadata is updated.
@@ -123,7 +141,11 @@ pub fn market_created(
 /// - Topics: [symbol!("mkt_meta_upd"), market_id as Symbol]
 /// - Data:   (market_id: u64, updated_by: Address)
 pub fn market_metadata_updated(env: &Env, market_id: u64, updated_by: Address) {
-    todo!("Emit market_metadata_updated event")
+    let topics = (
+        soroban_sdk::Symbol::new(env, "mkt_metadata_updated"),
+        market_id,
+    );
+    env.events().publish(topics, (updated_by,));
 }
 
 /// Emitted when an oracle address is set for a specific market.
@@ -156,7 +178,8 @@ pub fn market_seeded(
 /// - Topics: [symbol!("mkt_paused"), market_id as Symbol]
 /// - Data:   (market_id: u64, paused_by: Address)
 pub fn market_paused(env: &Env, market_id: u64, paused_by: Address) {
-    todo!("Emit market_paused event")
+    let topics = (soroban_sdk::Symbol::new(env, "market_paused"), market_id);
+    env.events().publish(topics, (paused_by,));
 }
 
 /// Emitted when a paused market is resumed.
@@ -165,7 +188,8 @@ pub fn market_paused(env: &Env, market_id: u64, paused_by: Address) {
 /// - Topics: [symbol!("mkt_resumed"), market_id as Symbol]
 /// - Data:   (market_id: u64, resumed_by: Address)
 pub fn market_resumed(env: &Env, market_id: u64, resumed_by: Address) {
-    todo!("Emit market_resumed event")
+    let topics = (soroban_sdk::Symbol::new(env, "market_resumed"), market_id);
+    env.events().publish(topics, (resumed_by,));
 }
 
 /// Emitted when the betting window is manually closed.
@@ -385,7 +409,11 @@ pub fn liquidity_removed(
     collateral_out: i128,
     lp_shares_burned: i128,
 ) {
-    todo!("Emit liquidity_removed event")
+    #[allow(deprecated)]
+    env.events().publish(
+        (Symbol::new(env, "liq_removed"), market_id),
+        (market_id, provider, collateral_out, lp_shares_burned),
+    );
 }
 
 /// Emitted when an LP provider collects their accumulated trading fees.

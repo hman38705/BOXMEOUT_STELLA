@@ -56,7 +56,16 @@ pub fn calc_initial_lp_shares(collateral: i128, n_outcomes: u32) -> i128 {
 /// - Use `math::checked_product` to detect overflow.
 /// - Return the product (k).
 pub fn compute_invariant(reserves: &[i128]) -> i128 {
-    todo!("Compute k = product(reserves_i) for all outcomes")
+    let mut invariant = 1_i128;
+
+    for reserve in reserves {
+        match invariant.checked_mul(*reserve) {
+            Some(value) => invariant = value,
+            None => return 0,
+        }
+    }
+
+    invariant
 }
 
 // =============================================================================
@@ -85,7 +94,62 @@ pub fn calc_buy_shares(
     outcome_id: usize,
     collateral_in: i128,
 ) -> i128 {
-    todo!("Compute shares received when buying via CPMM")
+    if collateral_in <= 0 {
+        panic!("collateral_in must be positive");
+    }
+
+    let n = pool.reserves.len() as usize;
+    if n < 2 || outcome_id >= n {
+        panic!("invalid outcome_id");
+    }
+
+    let outcome_idx = outcome_id as u32;
+    let old_target = pool.reserves.get(outcome_idx).unwrap_or(0);
+    if old_target <= 0 {
+        panic!("insufficient reserve");
+    }
+
+    let others = (n - 1) as i128;
+    let base_add = collateral_in / others;
+    let mut remainder = collateral_in % others;
+
+    let mut product_others: i128 = 1;
+    for i in 0..n {
+        if i == outcome_id {
+            continue;
+        }
+
+        let i_u32 = i as u32;
+        let mut reserve_i = pool.reserves.get(i_u32).unwrap_or(0);
+        if reserve_i <= 0 {
+            panic!("invalid reserve");
+        }
+
+        let mut add_i = base_add;
+        if remainder > 0 {
+            add_i += 1;
+            remainder -= 1;
+        }
+        reserve_i = reserve_i
+            .checked_add(add_i)
+            .expect("reserve overflow during buy");
+
+        product_others = product_others
+            .checked_mul(reserve_i)
+            .expect("overflow in product_others");
+    }
+
+    if product_others <= 0 {
+        panic!("invalid product_others");
+    }
+
+    let new_target = pool.invariant_k / product_others;
+    let shares_out = old_target - new_target;
+    if new_target <= 0 || shares_out <= 0 {
+        panic!("insufficient reserve");
+    }
+
+    shares_out
 }
 
 /// Update pool reserves after a successful buy of `outcome_id`.
@@ -101,7 +165,67 @@ pub fn update_reserves_buy(
     collateral_in: i128,
     shares_out: i128,
 ) -> AmmPool {
-    todo!("Update CPMM pool reserves after a buy trade")
+    if collateral_in <= 0 || shares_out <= 0 {
+        panic!("invalid buy update");
+    }
+
+    let n = pool.reserves.len() as usize;
+    if n < 2 || outcome_id >= n {
+        panic!("invalid outcome_id");
+    }
+
+    let mut new_reserves = pool.reserves.clone();
+    let others = (n - 1) as i128;
+    let base_add = collateral_in / others;
+    let mut remainder = collateral_in % others;
+
+    for i in 0..n {
+        if i == outcome_id {
+            continue;
+        }
+        let i_u32 = i as u32;
+        let reserve_i = new_reserves.get(i_u32).unwrap_or(0);
+        let mut add_i = base_add;
+        if remainder > 0 {
+            add_i += 1;
+            remainder -= 1;
+        }
+        let updated = reserve_i
+            .checked_add(add_i)
+            .expect("reserve overflow during buy update");
+        new_reserves.set(i_u32, updated);
+    }
+
+    let outcome_idx = outcome_id as u32;
+    let target = new_reserves.get(outcome_idx).unwrap_or(0);
+    let updated_target = target
+        .checked_sub(shares_out)
+        .expect("target reserve underflow during buy update");
+    if updated_target <= 0 {
+        panic!("insufficient reserve");
+    }
+    new_reserves.set(outcome_idx, updated_target);
+
+    let mut invariant_k = 1i128;
+    for i in 0..n {
+        let r = new_reserves.get(i as u32).unwrap_or(0);
+        if r <= 0 {
+            panic!("invalid reserve after buy");
+        }
+        invariant_k = invariant_k
+            .checked_mul(r)
+            .expect("overflow in invariant after buy");
+    }
+
+    AmmPool {
+        market_id: pool.market_id,
+        reserves: new_reserves,
+        invariant_k,
+        total_collateral: pool
+            .total_collateral
+            .checked_add(collateral_in)
+            .expect("total_collateral overflow during buy"),
+    }
 }
 
 // =============================================================================
@@ -125,7 +249,77 @@ pub fn calc_sell_collateral(
     outcome_id: usize,
     shares_in: i128,
 ) -> i128 {
-    todo!("Compute collateral returned when selling shares via CPMM")
+    if shares_in <= 0 {
+        panic!("shares_in must be positive");
+    }
+
+    let n = pool.reserves.len() as usize;
+    if n < 2 || outcome_id >= n {
+        panic!("invalid outcome_id");
+    }
+
+    let outcome_idx = outcome_id as u32;
+    let old_target = pool.reserves.get(outcome_idx).unwrap_or(0);
+    if old_target <= 0 {
+        panic!("invalid reserve");
+    }
+
+    let new_target = old_target
+        .checked_add(shares_in)
+        .expect("target reserve overflow during sell");
+    if new_target <= 0 {
+        panic!("invalid target reserve");
+    }
+
+    let required_others_product = pool.invariant_k / new_target;
+    let mut min_other = i128::MAX;
+    let mut old_others: alloc::vec::Vec<i128> = alloc::vec::Vec::new();
+    for i in 0..n {
+        if i == outcome_id {
+            continue;
+        }
+        let r = pool.reserves.get(i as u32).unwrap_or(0);
+        if r <= 1 {
+            panic!("insufficient reserve");
+        }
+        if r < min_other {
+            min_other = r;
+        }
+        old_others.push(r);
+    }
+
+    let mut low = 0i128;
+    let mut high = min_other - 1;
+    while low < high {
+        let mid = (low + high + 1) / 2;
+        let mut prod = 1i128;
+        for i in 0..old_others.len() {
+            let r = *old_others.get(i).unwrap_or(&0) - mid;
+            if r <= 0 {
+                prod = 0;
+                break;
+            }
+            prod = prod.checked_mul(r).unwrap_or(0);
+            if prod == 0 {
+                break;
+            }
+        }
+
+        if prod >= required_others_product {
+            low = mid;
+        } else {
+            high = mid - 1;
+        }
+    }
+
+    let collateral_out = low
+        .checked_mul((n as i128) - 1)
+        .expect("collateral_out overflow");
+    if collateral_out <= 0 || collateral_out >= pool.total_collateral {
+        panic!("invalid collateral_out");
+    }
+
+    collateral_out
 }
 
 /// Update pool reserves after a successful sell of `outcome_id`.
@@ -141,7 +335,67 @@ pub fn update_reserves_sell(
     shares_in: i128,
     collateral_out: i128,
 ) -> AmmPool {
-    todo!("Update CPMM pool reserves after a sell trade")
+    if shares_in <= 0 || collateral_out <= 0 {
+        panic!("invalid sell update");
+    }
+
+    let n = pool.reserves.len() as usize;
+    if n < 2 || outcome_id >= n {
+        panic!("invalid outcome_id");
+    }
+
+    let mut new_reserves = pool.reserves.clone();
+    let outcome_idx = outcome_id as u32;
+    let current_target = new_reserves.get(outcome_idx).unwrap_or(0);
+    let updated_target = current_target
+        .checked_add(shares_in)
+        .expect("target reserve overflow during sell update");
+    new_reserves.set(outcome_idx, updated_target);
+
+    let others = (n - 1) as i128;
+    let base_sub = collateral_out / others;
+    let mut remainder = collateral_out % others;
+
+    for i in 0..n {
+        if i == outcome_id {
+            continue;
+        }
+        let i_u32 = i as u32;
+        let reserve_i = new_reserves.get(i_u32).unwrap_or(0);
+        let mut sub_i = base_sub;
+        if remainder > 0 {
+            sub_i += 1;
+            remainder -= 1;
+        }
+        let updated = reserve_i
+            .checked_sub(sub_i)
+            .expect("reserve underflow during sell update");
+        if updated <= 0 {
+            panic!("insufficient reserve");
+        }
+        new_reserves.set(i_u32, updated);
+    }
+
+    let mut invariant_k = 1i128;
+    for i in 0..n {
+        let r = new_reserves.get(i as u32).unwrap_or(0);
+        if r <= 0 {
+            panic!("invalid reserve after sell");
+        }
+        invariant_k = invariant_k
+            .checked_mul(r)
+            .expect("overflow in invariant after sell");
+    }
+
+    AmmPool {
+        market_id: pool.market_id,
+        reserves: new_reserves,
+        invariant_k,
+        total_collateral: pool
+            .total_collateral
+            .checked_sub(collateral_out)
+            .expect("total_collateral underflow during sell"),
+    }
 }
 
 // =============================================================================
@@ -212,5 +466,12 @@ pub fn calc_collateral_from_lp(
     lp_shares_to_burn: i128,
     total_lp_shares: i128,
 ) -> i128 {
-    todo!("Compute collateral returned when burning LP shares")
+    if pool.total_collateral <= 0 || lp_shares_to_burn <= 0 || total_lp_shares <= 0 {
+        return 0;
+    }
+
+    match pool.total_collateral.checked_mul(lp_shares_to_burn) {
+        Some(value) => value / total_lp_shares,
+        None => 0,
+    }
 }
