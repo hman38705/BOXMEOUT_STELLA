@@ -154,7 +154,11 @@ pub fn market_metadata_updated(env: &Env, market_id: u64, updated_by: Address) {
 /// - Topics: [symbol!("mkt_oracle"), market_id as Symbol]
 /// - Data:   (market_id: u64, oracle: Address)
 pub fn market_oracle_set(env: &Env, market_id: u64, oracle: Address) {
-    todo!("Emit market_oracle_set event")
+    let topics = (
+        Symbol::new(env, "mkt_oracle"),
+        Symbol::new(env, "set"),
+    );
+    env.events().publish(topics, (market_id, oracle));
 }
 
 /// Emitted when the initial AMM liquidity is seeded and the market opens.

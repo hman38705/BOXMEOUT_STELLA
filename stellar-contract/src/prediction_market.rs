@@ -585,7 +585,26 @@ impl PredictionMarketContract {
         market_id: u64,
         oracle_address: Address,
     ) -> Result<(), PredictionMarketError> {
-        todo!("Implement per-market oracle override")
+        let config = load_config(&env)?;
+        config.admin.require_auth();
+
+        let market: Market = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Market(market_id))
+            .ok_or(PredictionMarketError::MarketNotFound)?;
+
+        if market.status == MarketStatus::Resolved || market.status == MarketStatus::Cancelled {
+            return Err(PredictionMarketError::AlreadyResolved);
+        }
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::MarketOracle(market_id), &oracle_address);
+
+        events::market_oracle_set(&env, market_id, oracle_address);
+
+        Ok(())
     }
 
     // =========================================================================
@@ -1497,7 +1516,55 @@ impl PredictionMarketContract {
         market_id: u64,
         proposed_outcome_id: u32,
     ) -> Result<(), PredictionMarketError> {
-        todo!("Implement oracle outcome report (phase 1 of 2-phase resolution)")
+        let config = load_config(&env)?;
+        let now = env.ledger().timestamp();
+
+        let effective_oracle: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::MarketOracle(market_id))
+            .unwrap_or_else(|| config.default_oracle.clone());
+
+        effective_oracle.require_auth();
+
+        let mut market: Market = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Market(market_id))
+            .ok_or(PredictionMarketError::MarketNotFound)?;
+
+        if market.status != MarketStatus::Closed && market.status != MarketStatus::Open {
+            return Err(PredictionMarketError::InvalidMarketStatus);
+        }
+
+        if now < market.resolution_deadline {
+            return Err(PredictionMarketError::InvalidTimestamp);
+        }
+
+        if proposed_outcome_id >= market.outcomes.len() as u32 {
+            return Err(PredictionMarketError::InvalidOutcome);
+        }
+
+        let report = OracleReport {
+            market_id,
+            oracle: effective_oracle.clone(),
+            proposed_outcome_id,
+            reported_at: now,
+            disputed: false,
+        };
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::OracleReport(market_id), &report);
+
+        market.status = MarketStatus::Reported;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Market(market_id), &market);
+
+        events::outcome_reported(&env, market_id, proposed_outcome_id);
+
+        Ok(())
     }
 
     /// A user disputes the oracle's reported outcome by locking a bond.
