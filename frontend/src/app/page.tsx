@@ -10,19 +10,61 @@
 // Lists all boxing markets with filters and sorting.
 // ============================================================
 
-import { useState } from 'react';
+import { useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useMarkets } from '../hooks/useMarkets';
 import { MarketCard } from '../components/market/MarketCard';
 import { MarketCardSkeleton } from '../components/market/MarketCardSkeleton';
 
-const WEIGHT_CLASSES = ['All', 'Heavyweight', 'Super-Middleweight', 'Middleweight', 'Welterweight', 'Lightweight'];
+const WEIGHT_CLASSES = [
+  'All Weight Classes',
+  'Heavyweight',
+  'Light Heavyweight',
+  'Super Middleweight',
+  'Middleweight',
+  'Super Welterweight',
+  'Welterweight',
+  'Super Lightweight',
+  'Lightweight',
+  'Super Featherweight',
+  'Featherweight',
+  'Super Bantamweight',
+  'Bantamweight',
+  'Super Flyweight',
+  'Flyweight',
+  'Minimumweight',
+];
 const STATUSES = ['All', 'Open', 'Resolved'];
 
 export default function HomePage(): JSX.Element {
-  const [weightClass, setWeightClass] = useState('All');
-  const [status, setStatus] = useState('All');
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const weightClass = searchParams.get('weight_class') ?? 'All Weight Classes';
+  const status = searchParams.get('status') ?? 'All';
+
+  const setWeightClass = useCallback((value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value === 'All Weight Classes') {
+      params.delete('weight_class');
+    } else {
+      params.set('weight_class', value);
+    }
+    router.replace(`?${params.toString()}`);
+  }, [router, searchParams]);
+
+  const setStatus = useCallback((value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value === 'All') {
+      params.delete('status');
+    } else {
+      params.set('status', value.toLowerCase());
+    }
+    router.replace(`?${params.toString()}`);
+  }, [router, searchParams]);
+
   const { markets, isLoading } = useMarkets({
-    weight_class: weightClass === 'All' ? undefined : weightClass,
+    weight_class: weightClass === 'All Weight Classes' ? undefined : weightClass,
     status: status === 'All' ? undefined : status.toLowerCase(),
   });
 
