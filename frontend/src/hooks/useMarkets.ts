@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { Market } from '../types';
-import type { MarketFilters } from '../services/api';
+import type { MarketFilters, PaginationParams } from '../services/api';
 import { fetchMarkets } from '../services/api';
 
 const POLL_INTERVAL = 30_000;
@@ -28,7 +28,7 @@ export interface UseMarketsResult {
  * Returns stale data during a background refresh (isLoading stays false
  * to avoid layout flash — use a subtle spinner instead).
  */
-export function useMarkets(filters?: MarketFilters): UseMarketsResult {
+export function useMarkets(filters?: MarketFilters, pagination?: PaginationParams): UseMarketsResult {
   const [markets, setMarkets] = useState<Market[]>([]);
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -36,7 +36,7 @@ export function useMarkets(filters?: MarketFilters): UseMarketsResult {
 
   const fetchAndUpdate = useCallback(async () => {
     try {
-      const response = await fetchMarkets(filters);
+      const response = await fetchMarkets(filters, pagination);
       setMarkets(response.markets);
       setTotal(response.total);
       setError(null);
@@ -45,7 +45,7 @@ export function useMarkets(filters?: MarketFilters): UseMarketsResult {
       setError(e as Error);
       setIsLoading(false);
     }
-  }, [filters]);
+  }, [filters, pagination]);
 
   const refetch = useCallback(() => {
     fetchAndUpdate();
