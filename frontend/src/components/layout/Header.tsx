@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { WalletButton } from './WalletButton';
 
@@ -8,7 +9,13 @@ const NETWORK = process.env.NEXT_PUBLIC_STELLAR_NETWORK ?? 'testnet';
 const IS_MAINNET = NETWORK === 'mainnet';
 const BANNER_KEY = 'boxmeout_mainnet_banner_dismissed';
 
+const NAV_LINKS = [
+  { href: '/', label: 'Markets' },
+  { href: '/portfolio', label: 'Portfolio' },
+];
+
 export function Header(): JSX.Element {
+  const pathname = usePathname();
   const [bannerDismissed, setBannerDismissed] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -23,6 +30,9 @@ export function Header(): JSX.Element {
     setBannerDismissed(true);
   };
 
+  const linkClass = (href: string) =>
+    `hover:text-white transition-colors ${pathname === href ? 'text-white font-semibold border-b-2 border-amber-500 pb-0.5' : 'text-gray-400'}`;
+
   return (
     <>
       {IS_MAINNET && !bannerDismissed && (
@@ -36,9 +46,10 @@ export function Header(): JSX.Element {
           <Link href="/" className="font-black text-amber-500 text-xl tracking-tight">BOXMEOUT</Link>
 
           {/* Desktop nav */}
-          <nav className="hidden md:flex gap-4 text-sm text-gray-300">
-            <Link href="/" className="hover:text-white">Home</Link>
-            <Link href="/portfolio" className="hover:text-white">Portfolio</Link>
+          <nav className="hidden md:flex gap-4 text-sm" aria-label="Main navigation">
+            {NAV_LINKS.map(({ href, label }) => (
+              <Link key={href} href={href} className={linkClass(href)}>{label}</Link>
+            ))}
           </nav>
 
           <div className="ml-auto flex items-center gap-3">
@@ -54,17 +65,26 @@ export function Header(): JSX.Element {
               className="md:hidden flex items-center justify-center w-11 h-11 text-gray-400 hover:text-white"
               onClick={() => setMenuOpen((o) => !o)}
               aria-label="Toggle menu"
+              aria-expanded={menuOpen}
             >
               ☰
             </button>
           </div>
         </div>
 
-        {/* Mobile nav */}
+        {/* Mobile nav drawer */}
         {menuOpen && (
-          <nav className="md:hidden bg-gray-950 border-t border-gray-800 px-4 py-2 flex flex-col text-sm text-gray-300">
-            <Link href="/" onClick={() => setMenuOpen(false)} className="flex items-center min-h-[44px] hover:text-white">Home</Link>
-            <Link href="/portfolio" onClick={() => setMenuOpen(false)} className="flex items-center min-h-[44px] hover:text-white">Portfolio</Link>
+          <nav className="md:hidden bg-gray-950 border-t border-gray-800 px-4 py-2 flex flex-col text-sm" aria-label="Mobile navigation">
+            {NAV_LINKS.map(({ href, label }) => (
+              <Link
+                key={href}
+                href={href}
+                onClick={() => setMenuOpen(false)}
+                className={`flex items-center min-h-[44px] ${linkClass(href)}`}
+              >
+                {label}
+              </Link>
+            ))}
           </nav>
         )}
       </header>
